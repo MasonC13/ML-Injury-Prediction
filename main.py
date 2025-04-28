@@ -13,7 +13,7 @@ server = app.server
 # Define constants - removed special teams positions
 HIGH_CONTACT_POSITIONS = ['OL', 'DL', 'RB', 'LB', 'TE', 'FB']
 HIGH_SPEED_POSITIONS = ['WR', 'DB', 'CB', 'S', 'FS', 'SS']
-OTHER_POSITIONS = ['QB', 'LS']  # Removed K, P
+OTHER_POSITIONS = ['QB']  # Removed LS
 
 # Load the saved model and preprocessor
 def load_model():
@@ -32,7 +32,7 @@ def get_temperature_category(temp):
         return "Cold"
     elif temp <= 75:
         return "Moderate"
-    elif temp <= 90:
+    elif temp <= 85:
         return "Warm"
     else:
         return "Hot"
@@ -41,7 +41,7 @@ def get_temperature_category(temp):
 roster_positions = sorted(HIGH_CONTACT_POSITIONS + HIGH_SPEED_POSITIONS + OTHER_POSITIONS)
 stadium_types = ['Indoor', 'Outdoor']
 field_types = ['Turf', 'Grass']
-weather_conditions = ['Clear', 'Rain', 'Snow', 'Cloudy', 'Windy', 'Hot', 'Cold']
+weather_conditions = ['Clear', 'Rain', 'Snow', 'Cloudy', 'Windy']
 play_types = ['Run', 'Pass']  # Removed Punt, Field Goal, Kickoff
 
 # Check if model exists
@@ -58,7 +58,7 @@ app.layout = html.Div([
     html.Div([
         html.Div([
             html.I(className="fas fa-exclamation-triangle warning-icon"),
-            html.Span("Warning: Model not found! Please run your training script (main.py) first to generate the model files.")
+            html.Span("Warning: Model not found! Please run your training script (train.py) first to generate the model files.")
         ], className="warning-message")
     ], id="model-warning", style={'display': 'none' if model_exists else 'block'}),
     
@@ -241,8 +241,35 @@ def predict_injury_risk(n_clicks, roster_position, play_type, temperature,
     # Make prediction
     prediction_prob = model.predict_proba(input_processed)[0, 1]
     
-    # Position-specific risk adjustment with updated values
+    # Position baseline risk adjustments
+    position_baseline_adjustments = {
+        # Offensive positions
+        "QB": 0.6,      # Quarterbacks have lowest injury rates
+        "OL": 0.90,     # Offensive linemen have higher injury risk
+        "RB": 1.0,      # Running backs as baseline
+        "FB": 0.85,      # Fullbacks slightly lower than RBs
+        "WR": 0.75,     # Wide receivers
+        "TE": 0.85,      # Tight ends 
+        
+        # Defensive positions
+        "DL": 0.90,     # Defensive linemen have higher risk
+        "LB": 0.95,      # Linebackers
+        "CB": 0.80,     # Cornerbacks
+        "S": 0.85,      # Safeties
+        "FS": 0.85,     # Free safeties
+        "SS": 0.85,     # Strong safeties
+        "DB": 0.80,     # Defensive backs generally
+    }
+    
+    # Apply position-specific baseline adjustment
     position = input_data['RosterPosition']
+    baseline_adjustment = position_baseline_adjustments.get(position, 1.0)
+    prediction_prob = prediction_prob * baseline_adjustment
+    
+    # Track baseline adjustment text
+    baseline_text = f"{(1-baseline_adjustment)*100:.0f}% position baseline reduction"
+    
+    # Position-specific play type adjustments with updated values
     play_type = input_data['PlayType'].lower()
     
     risk_adjustment = 1.0  # Default, no adjustment
@@ -252,23 +279,29 @@ def predict_injury_risk(n_clicks, roster_position, play_type, temperature,
     if play_type == 'run':
         if position in ['RB']:
             # Running backs on run plays have highest risk adjustment
-            risk_adjustment = 1.05  # 5% increase
-            adjustment_text = f"+5% run-specific {position} adjustment"
+            risk_adjustment = 1.10  # 10% increase
+            adjustment_text = f"+10% run-specific {position} adjustment, with {baseline_text}"
         elif position in ['OL', 'DL', 'LB', 'FB']:
             # Other high-contact positions on run plays
-            risk_adjustment = 1.03  # 3% increase
-            adjustment_text = f"+3% run-specific {position} adjustment"
+            risk_adjustment = 1.07  # 7% increase
+            adjustment_text = f"+7% run-specific {position} adjustment, with {baseline_text}"
+        else:
+            adjustment_text = baseline_text
     elif play_type == 'pass':
         if position in ['WR', 'DB', 'CB']:
             # High-speed positions on pass plays
             risk_adjustment = 1.05  # 5% increase
-            adjustment_text = f"+5% pass-specific {position} adjustment"
+            adjustment_text = f"+5% pass-specific {position} adjustment, with {baseline_text}"
         elif position in ['TE', 'S', 'FS', 'SS']:
             # Secondary high-speed positions
             risk_adjustment = 1.03  # 3% increase
-            adjustment_text = f"+3% pass-specific {position} adjustment"
+            adjustment_text = f"+3% pass-specific {position} adjustment, with {baseline_text}"
+        else:
+            adjustment_text = baseline_text
+    else:
+        adjustment_text = baseline_text
     
-    # Apply the adjustment to the probability
+    # Apply the play-type adjustment to the probability
     adjusted_prob = min(0.99, prediction_prob * risk_adjustment)  # Cap at 99%
     
     # Determine risk level
