@@ -10,7 +10,7 @@ import os
 app = dash.Dash(__name__, suppress_callback_exceptions=True)
 server = app.server
 
-# Define constants - removed special teams positions
+# Define positions (No special teams included)
 HIGH_CONTACT_POSITIONS = ['OL', 'DL', 'RB', 'LB', 'TE', 'FB']
 HIGH_SPEED_POSITIONS = ['WR', 'DB', 'CB', 'S', 'FS', 'SS']
 OTHER_POSITIONS = ['QB']  # Removed LS
